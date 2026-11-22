@@ -15,7 +15,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev && chmod +x deploy/api/entrypoint.sh
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Run as an unprivileged user
@@ -24,4 +24,5 @@ USER appuser
 
 EXPOSE 8000
 
+ENTRYPOINT [ "./deploy/api/entrypoint.sh" ]
 CMD [ "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000" ]

@@ -48,6 +48,8 @@ services:
     # still need `make build`.
     volumes:
       - ../app:/app/app
+      # New migrations apply on container restart without a rebuild.
+      - ../alembic:/app/alembic
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
     ports:
       - "8000:8000"

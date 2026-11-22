@@ -69,6 +69,7 @@ Build a simplified backend system that provides user authentication, ride creati
 - Composite index on `(driver_id, status, completed_at)` for driver history and earnings queries.
 - CHECK constraints on coordinates.
 - A partial unique index so a driver can have at most one active ride (`ASSIGNED` / `IN_PROGRESS`).
+- A partial unique index so a rider can have at most one active ride (a second request returns 409).
 
 ---
 
@@ -201,7 +202,7 @@ Dockerfile
 | 401 | Missing or invalid token |
 | 403 | Wrong role, or not the resource owner |
 | 404 | Resource not found |
-| 409 | Duplicate email or plate, invalid transition, no driver available |
+| 409 | Duplicate email or plate, invalid transition, no driver available, rider already has an active ride |
 
 ---
 

@@ -30,4 +30,13 @@ run_dev:
 down:
 	$(COMPOSE) down
 
-.PHONY: format lint test build clear run run_db run_dev down
+migrate:
+	uv run alembic upgrade head
+
+downgrade:
+	uv run alembic downgrade -1
+
+generate_migrations:
+	uv run alembic revision --autogenerate -m "$(msg)"
+
+.PHONY: format lint test build clear run run_db run_dev down migrate downgrade generate_migrations
