@@ -1,0 +1,72 @@
+# Same as Black.
+line-length = 88
+indent-width = 4
+
+# Match requires-python in pyproject.toml
+target-version = "py313"
+
+# Generated migration files are not linted.
+extend-exclude = ["alembic/versions"]
+
+[lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # Pyflakes
+    "I",     # isort
+    "D",     # pydocstyle
+    "B",     # flake8-bugbear
+    "UP",    # pyupgrade
+    "SIM",   # flake8-simplify
+    "N",     # pep8-naming
+    "ASYNC", # flake8-async (blocking calls inside async code)
+    "RUF",   # Ruff-specific rules
+]
+
+ignore = [
+    # Noisy docstring rules
+    "D100", # Missing docstring in public module
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D106", # Missing docstring in public nested class (e.g. Pydantic `Config`)
+    # Resolve D20x incompatibility pairs (keep D211/D212 defaults)
+    "D203", # incorrect-blank-line-before-class
+    "D213", # multi-line-summary-second-line
+    # FastAPI's `Depends()` / `Query()` in argument defaults is idiomatic.
+    "B008",
+]
+
+# Allow fixes for all enabled rules (when --fix is provided).
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[lint.per-file-ignores]
+# Test names already say what they check.
+"tests/**" = ["D"]
+# Alembic renders the revision message as the docstring's first line.
+"alembic/**" = ["D400", "D415"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.isort]
+known-first-party = ["app", "scripts", "tests"]
+# The local alembic/ folder holds migrations; `import alembic` is the library.
+known-third-party = ["alembic"]
+force-wrap-aliases = true
+combine-as-imports = true
+lines-after-imports = 2
+# Blank line between `import x` and `from y import z` style imports
+lines-between-types = 1
+
+[format]
+# Like Black.
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = false
+docstring-code-line-length = "dynamic"

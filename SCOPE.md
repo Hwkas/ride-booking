@@ -18,7 +18,7 @@ Build a simplified backend system that provides user authentication, ride creati
 | Framework | FastAPI |
 | Validation | Pydantic v2, pydantic-settings for config |
 | Database | PostgreSQL 16 |
-| ORM | SQLAlchemy 2.0 (async, `asyncpg`) |
+| ORM | SQLAlchemy 2.x (async for the API, sync for scripts; `psycopg` 3 driver) |
 | Migrations | Alembic |
 | Auth | JWT (PyJWT) + bcrypt password hashing |
 | Testing | pytest, pytest-asyncio, httpx `AsyncClient`, against a real Postgres test DB |

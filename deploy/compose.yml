@@ -1,0 +1,60 @@
+name: ride-booking
+
+
+# Run via the Makefile (`make run`), which passes --env-file .env so the
+# ${POSTGRES_*} values below are interpolated from the repo-root .env.
+services:
+  db:
+    image: postgres:19.0-alpine3.24
+    # PostgreSQL 18+ keeps its data in a versioned subdirectory of
+    # /var/lib/postgresql, so the volume is mounted at the parent.
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      # Creates the separate test database on the first start of the volume.
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    env_file:
+      - ../.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  pgweb:
+    image: sosedoff/pgweb:latest
+    container_name: ride_pgweb
+    restart: always
+    ports:
+      - "8081:8081"
+    env_file:
+      - ../.env  # PGWEB_DATABASE_URL
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      # .env points at localhost for `make run_dev`; inside compose the host is `db`.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    # Hot reload: the source is mounted over the image's copy and uvicorn
+    # restarts on every change. Dependency changes (pyproject.toml / uv.lock)
+    # still need `make build`.
+    volumes:
+      - ../app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+volumes:
+  postgres_data:

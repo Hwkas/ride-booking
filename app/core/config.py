@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings, loaded from environment variables (and `.env` if present)."""
+    """Application settings, loaded from env vars (and `.env` if present)."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Database
     database_url: PostgresDsn
     test_database_url: PostgresDsn | None = None
+    db_echo: bool = False
 
     # Auth
     jwt_secret_key: SecretStr
