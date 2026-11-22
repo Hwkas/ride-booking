@@ -55,16 +55,18 @@ Build a simplified backend system that provides user authentication, ride creati
 |---|---|---|
 | id | PK | |
 | rider_id | FK → users | indexed |
-| driver_id | FK → drivers | nullable, indexed |
+| driver_id | FK → drivers | NOT NULL, indexed (every ride has a driver) |
 | pickup_address / dropoff_address | varchar | |
 | pickup_lat / pickup_lng / dropoff_lat / dropoff_lng | numeric | CHECK value ranges |
 | status | enum | indexed |
-| fare_estimate | numeric(10,2) | optional |
-| requested_at, assigned_at, started_at, completed_at, cancelled_at | timestamptz | lifecycle audit |
+| fare_estimate | numeric(10,2) | set at request time (distance-based) |
+| final_fare | numeric(10,2) | set on completion; source of driver earnings |
+| requested_at (= assigned_at), started_at, completed_at, cancelled_at | timestamptz | lifecycle audit |
 | cancellation_reason | varchar | nullable |
 
 **Constraints:**
 - Enum types for role and status.
+- Composite index on `(driver_id, status, completed_at)` for driver history and earnings queries.
 - CHECK constraints on coordinates.
 - A partial unique index so a driver can have at most one active ride (`ASSIGNED` / `IN_PROGRESS`).
 
@@ -73,17 +75,19 @@ Build a simplified backend system that provides user authentication, ride creati
 ## 4. Ride Lifecycle (State Machine)
 
 ```
-REQUESTED ──► ASSIGNED ──► IN_PROGRESS ──► COMPLETED
-    │             │
-    └─────────────┴──────► CANCELLED
+(request) ──► ASSIGNED ──► IN_PROGRESS ──► COMPLETED
+                 │
+                 └──────► CANCELLED
 ```
 
 | Transition | Allowed actor |
 |---|---|
-| REQUESTED → ASSIGNED | System (auto) / admin |
+| (request) → ASSIGNED | System, at creation; only if a driver is available |
 | ASSIGNED → IN_PROGRESS | Assigned driver |
 | IN_PROGRESS → COMPLETED | Assigned driver |
-| REQUESTED / ASSIGNED → CANCELLED | Rider (owner), assigned driver, admin |
+| ASSIGNED → CANCELLED | Rider (owner), assigned driver, admin |
+
+There is no `REQUESTED` or pending status. A ride only exists once a driver has been assigned to it.
 
 **Rules:**
 - An invalid transition returns **409 Conflict**.
@@ -97,7 +101,9 @@ REQUESTED ──► ASSIGNED ──► IN_PROGRESS ──► COMPLETED
 - **Strategy:** select the nearest available driver (haversine distance) when coordinates exist; otherwise the longest-idle available driver.
 - **Concurrency safety:** `SELECT ... FOR UPDATE SKIP LOCKED` inside a transaction ensures two simultaneous ride requests never receive the same driver.
 - **Availability:** the driver becomes unavailable on assignment and available again on completion or cancellation.
-- **No driver available:** the ride remains `REQUESTED` and the response indicates this. A manual or admin `/assign` endpoint can retry later.
+- **Flow on `POST /rides`:** in one transaction, lock an available driver, create the ride as `ASSIGNED`, and mark the driver unavailable.
+- **No driver available:** nothing is persisted. The request fails with **409 `NO_DRIVER_AVAILABLE`**, and the rider simply tries again later.
+- **No queue:** there are no pending requests, no background matching and no manual assign endpoint.
 
 ---
 
@@ -116,15 +122,33 @@ REQUESTED ──► ASSIGNED ──► IN_PROGRESS ──► COMPLETED
 | POST | `/drivers/profile` | Create driver profile (vehicle info) | Driver |
 | GET | `/drivers/me` | Own driver profile | Driver |
 | PATCH | `/drivers/me/availability` | Go online/offline, update location | Driver |
+| GET | `/drivers/me/rides` | Full ride history; paginated; filter by status and date range | Driver |
+| GET | `/drivers/me/earnings` | Earnings summary for a date range (see below) | Driver |
 | GET | `/drivers` | List drivers (filter by availability) | Admin |
+
+**Earnings response** (`?from=2026-11-01&to=2026-11-30&group_by=day|week|month`):
+```json
+{
+  "from": "2026-11-01",
+  "to": "2026-11-30",
+  "total_earnings": "1240.50",
+  "completed_rides": 42,
+  "average_fare": "29.54",
+  "breakdown": [
+    { "period": "2026-11-01", "earnings": "85.00", "rides": 3 }
+  ]
+}
+```
+- Earnings are the sum of `final_fare` over the driver's `COMPLETED` rides, aggregated in SQL (`SUM`, `COUNT`, `date_trunc`), not in Python.
+- Monetary values are `Decimal`, serialized as strings so no precision is lost.
+- `from` and `to` are optional; the default is all time, with no breakdown.
 
 ### Rides
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/rides` | Request a ride (attempts auto-assign) | Rider |
+| POST | `/rides` | Request a ride; assigns an available driver or returns 409 `NO_DRIVER_AVAILABLE` | Rider |
 | GET | `/rides` | List rides scoped to caller; paginated; filter by status | Any |
 | GET | `/rides/{id}` | Ride details (owner, assigned driver, or admin) | Any |
-| POST | `/rides/{id}/assign` | Manually trigger or retry assignment | Admin |
 | POST | `/rides/{id}/start` | Start ride | Assigned driver |
 | POST | `/rides/{id}/complete` | Complete ride | Assigned driver |
 | POST | `/rides/{id}/cancel` | Cancel ride (optional reason) | Rider / driver / admin |
@@ -168,7 +192,7 @@ Dockerfile
 - These exceptions are mapped to HTTP responses in one central handler.
 - Every error uses a consistent body:
   ```json
-  { "error": { "code": "INVALID_STATE_TRANSITION", "message": "Cannot start a ride in status REQUESTED" } }
+  { "error": { "code": "INVALID_STATE_TRANSITION", "message": "Cannot complete a ride in status ASSIGNED" } }
   ```
 
 | Status | When |
@@ -177,7 +201,7 @@ Dockerfile
 | 401 | Missing or invalid token |
 | 403 | Wrong role, or not the resource owner |
 | 404 | Resource not found |
-| 409 | Duplicate email or plate, invalid transition, driver already busy |
+| 409 | Duplicate email or plate, invalid transition, no driver available |
 
 ---
 
@@ -186,8 +210,9 @@ Dockerfile
 - **Auth:** register, duplicate email, login success/failure, expired or invalid token.
 - **Authorization:** role guards; a rider cannot access another rider's ride.
 - **State machine:** every valid transition succeeds and every invalid one returns 409 (parametrized).
-- **Assignment:** nearest driver chosen, no-driver case, driver freed after complete/cancel.
+- **Assignment:** nearest driver chosen; no driver available returns 409 and creates no ride row; driver freed after complete/cancel.
 - **Concurrency:** parallel ride requests with a single available driver result in exactly one assignment.
+- **Driver history & earnings:** a driver sees only their own rides; filters and pagination work; totals and the day/week/month breakdown are correct; cancelled rides are excluded from earnings; an empty range returns zero.
 - **Infrastructure:** isolated test DB, with a transaction rolled back per test; fixtures and factories for users, drivers and rides.
 - **Coverage target:** ≥ 85%.
 
@@ -212,7 +237,7 @@ Dockerfile
 - Real-time tracking (WebSockets)
 - Refresh tokens and token revocation
 - Ratings and reviews
-- Background job queue for assignment retries
+- Ride request queue / pending matching when no driver is free
 - Rate limiting
 
 ---
@@ -220,10 +245,11 @@ Dockerfile
 ## 12. Assumptions / Open Questions
 
 1. **Roles:** rider, driver and admin, with a driver profile table linked to the user.
-2. **Assignment:** automatic on ride creation, with a manual/admin endpoint for retries.
-3. **Fare:** a simple distance-based estimate (base + per-km).
-4. **SQLAlchemy:** async mode.
-5. **Admin users:** seeded via a script or environment variables; they cannot self-register.
+2. **Assignment:** happens immediately when a ride is requested. If no driver is available, the request is rejected; no pending rides or queue.
+3. **Fare:** a distance-based estimate (base + per-km) at request time. `final_fare` is set on completion and equals the estimate, since there is no live tracking.
+4. **Earnings:** the driver keeps 100% of the fare. No commission is modelled, but a commission rate could be added in config.
+5. **SQLAlchemy:** async mode.
+6. **Admin users:** seeded via a script or environment variables; they cannot self-register.
 
 ---
 
@@ -234,7 +260,8 @@ Dockerfile
 3. Auth: register, login, JWT, role dependencies
 4. Driver profile + availability
 5. Ride creation + state machine + transition endpoints
-6. Driver assignment with row locking
-7. Central error handling
-8. Tests (unit + integration + concurrency)
-9. README, final cleanup, push to GitHub
+6. Driver assignment with row locking (reject when no driver is free)
+7. Driver ride history + earnings
+8. Central error handling
+9. Tests (unit + integration + concurrency)
+10. README, final cleanup, push to GitHub
