@@ -55,6 +55,13 @@ class NotFoundError(AppError):
     default_message = "Resource not found."
 
 
+class DriverProfileNotFoundError(NotFoundError):
+    """A driver user has not created their driver profile yet."""
+
+    code = "DRIVER_PROFILE_NOT_FOUND"
+    default_message = "Create your driver profile first."
+
+
 # --- 409 ---------------------------------------------------------------------
 
 
@@ -70,6 +77,20 @@ class EmailAlreadyRegisteredError(ConflictError):
 
     code = "EMAIL_ALREADY_REGISTERED"
     default_message = "An account with this email already exists."
+
+
+class DriverProfileExistsError(ConflictError):
+    """The driver already has a profile."""
+
+    code = "DRIVER_PROFILE_EXISTS"
+    default_message = "You already have a driver profile."
+
+
+class LicensePlateTakenError(ConflictError):
+    """Another driver is registered with this license plate."""
+
+    code = "LICENSE_PLATE_TAKEN"
+    default_message = "This license plate is already registered."
 
 
 class InvalidStateTransitionError(ConflictError):
