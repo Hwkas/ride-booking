@@ -1,8 +1,9 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Select, exists, func, select
+from sqlalchemy import Date, Select, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 from sqlalchemy.sql.elements import ColumnElement
@@ -96,7 +97,7 @@ class RideRepository:
         )
         return await self.session.scalar(stmt)
 
-    async def list(
+    async def list_page(
         self, filters: RideFilters, *, limit: int, offset: int
     ) -> tuple[list[Ride], int]:
         """Return one page of matching rides (newest first) and the total."""
@@ -112,3 +113,57 @@ class RideRepository:
             .offset(offset)
         )
         return list(rows), total or 0
+
+    # --- Earnings -----------------------------------------------------------
+
+    @staticmethod
+    def _completed_by(
+        driver_id: int,
+        completed_from: datetime | None,
+        completed_before: datetime | None,
+    ) -> list[ColumnElement[bool]]:
+        clauses = [Ride.driver_id == driver_id, Ride.status == RideStatus.COMPLETED]
+        if completed_from is not None:
+            clauses.append(Ride.completed_at >= completed_from)
+        if completed_before is not None:
+            clauses.append(Ride.completed_at < completed_before)
+        return clauses
+
+    async def earnings_totals(
+        self,
+        driver_id: int,
+        *,
+        completed_from: datetime | None,
+        completed_before: datetime | None,
+    ) -> tuple[Decimal, int]:
+        """Return ``(sum of final fares, number of rides)`` for completed rides."""
+        stmt = select(
+            func.coalesce(func.sum(Ride.final_fare), 0), func.count(Ride.id)
+        ).where(*self._completed_by(driver_id, completed_from, completed_before))
+        total, count = (await self.session.execute(stmt)).one()
+        return Decimal(total), count
+
+    async def earnings_by_period(
+        self,
+        driver_id: int,
+        *,
+        unit: str,
+        completed_from: datetime | None,
+        completed_before: datetime | None,
+    ) -> list[tuple[date, Decimal, int]]:
+        """Return ``(period start, earnings, rides)`` per day/week/month, oldest first.
+
+        Periods are computed in UTC regardless of the database session's time
+        zone. Only periods with at least one completed ride are returned.
+        """
+        period = cast(
+            func.date_trunc(unit, func.timezone("UTC", Ride.completed_at)), Date
+        ).label("period")
+        stmt = (
+            select(period, func.sum(Ride.final_fare), func.count(Ride.id))
+            .where(*self._completed_by(driver_id, completed_from, completed_before))
+            .group_by(period)
+            .order_by(period)
+        )
+        rows = await self.session.execute(stmt)
+        return [(p, Decimal(total), count) for p, total, count in rows]

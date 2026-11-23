@@ -82,7 +82,7 @@ class DriverRepository:
         await self.session.flush()
         return driver
 
-    async def list(
+    async def list_page(
         self, *, is_available: bool | None, limit: int, offset: int
     ) -> tuple[list[Driver], int]:
         """Return one page of drivers (newest first) and the total count."""

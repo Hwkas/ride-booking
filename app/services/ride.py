@@ -165,7 +165,7 @@ class RideService:
             case UserRole.ADMIN:
                 filters = RideFilters(statuses=statuses)
 
-        rides, total = await self.rides.list(
+        rides, total = await self.rides.list_page(
             filters, limit=page.limit, offset=page.offset
         )
         return Page[RideRead](

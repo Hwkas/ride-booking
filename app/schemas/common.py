@@ -1,5 +1,7 @@
 """Reusable schema building blocks."""
 
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 
@@ -69,3 +71,23 @@ class Page[T](BaseModel):
     total: int
     limit: int
     offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class DateRange:
+    """Inclusive calendar-day range in UTC; either end may be open."""
+
+    start: date | None = None
+    end: date | None = None
+
+    @property
+    def start_at(self) -> datetime | None:
+        """Inclusive lower bound: midnight UTC at the start of ``start``."""
+        return datetime.combine(self.start, time.min, UTC) if self.start else None
+
+    @property
+    def end_before(self) -> datetime | None:
+        """Exclusive upper bound: midnight UTC after ``end``."""
+        if self.end is None:
+            return None
+        return datetime.combine(self.end + timedelta(days=1), time.min, UTC)

@@ -88,7 +88,7 @@ class DriverService:
         self, *, is_available: bool | None, page: PaginationParams
     ) -> Page[DriverRead]:
         """Admin view of all drivers, optionally filtered by availability."""
-        drivers, total = await self.drivers.list(
+        drivers, total = await self.drivers.list_page(
             is_available=is_available, limit=page.limit, offset=page.offset
         )
         return Page[DriverRead](

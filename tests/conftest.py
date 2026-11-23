@@ -55,7 +55,8 @@ def _reset_schema_and_migrate() -> None:
     engine.dispose()
 
     config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    # ConfigParser treats "%" as interpolation; escape it (e.g. encoded passwords).
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL.replace("%", "%%"))
     command.upgrade(config, "head")
 
 

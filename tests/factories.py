@@ -118,9 +118,14 @@ async def create_ride(
         fields["final_fare"] = overrides.get("fare_estimate", fields["fare_estimate"])
     if status is RideStatus.CANCELLED:
         fields["cancelled_at"] = now
+    # created_at is database-generated (not a constructor argument), but tests
+    # may pin it to control "requested" times.
+    created_at = overrides.pop("created_at", None)
     fields.update(overrides)
 
     ride = Ride(**fields)
+    if created_at is not None:
+        ride.created_at = created_at
     session.add(ride)
     await session.flush()
     return ride
