@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
+from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.session import async_engine, sync_engine
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
         openapi_url=f"{settings.api_v1_prefix}/openapi.json",
         lifespan=lifespan,
     )
+    register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app
 
