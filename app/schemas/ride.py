@@ -14,9 +14,10 @@ from app.models import Ride, RideStatus
 from app.schemas.common import Latitude, Longitude, Money
 
 
-Address = Annotated[
+ShortText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
 ]
+Address = ShortText
 Kilometres = Annotated[
     Decimal, PlainSerializer(float, return_type=float, when_used="json")
 ]
@@ -41,6 +42,12 @@ class RideCreate(BaseModel):
         if (self.pickup.lat, self.pickup.lng) == (self.dropoff.lat, self.dropoff.lng):
             raise ValueError("Pickup and dropoff must be different locations.")
         return self
+
+
+class RideCancel(BaseModel):
+    """Optional reason when cancelling."""
+
+    reason: ShortText | None = Field(default=None, examples=["Plans changed"])
 
 
 class RideDriver(BaseModel):

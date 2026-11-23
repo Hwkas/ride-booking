@@ -1,12 +1,19 @@
+from datetime import UTC, datetime
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ActiveRideExistsError, NoDriverAvailableError
-from app.models import Ride, RideStatus, User
+from app.core.exceptions import (
+    ActiveRideExistsError,
+    NoDriverAvailableError,
+    RideNotFoundError,
+)
+from app.models import Ride, RideStatus, User, UserRole
 from app.repositories.driver import DriverRepository
 from app.repositories.ride import RideRepository
 from app.schemas.ride import RideCreate
 from app.services.pricing import estimate_fare, trip_distance_km
+from app.services.ride_lifecycle import RideAction, RideActor, apply_transition
 
 
 RIDER_ACTIVE_RIDE_MESSAGE = "You already have an active ride."
@@ -17,8 +24,22 @@ def _violated_constraint(exc: IntegrityError) -> str | None:
     return getattr(diag, "constraint_name", None)
 
 
+def actor_for(user: User, ride: Ride) -> RideActor | None:
+    """The caller's relationship to the ride, or None if they have none.
+
+    Requires ``ride.driver`` to be loaded.
+    """
+    if user.role is UserRole.ADMIN:
+        return RideActor.ADMIN
+    if user.role is UserRole.RIDER and ride.rider_id == user.id:
+        return RideActor.RIDER
+    if user.role is UserRole.DRIVER and ride.driver.user_id == user.id:
+        return RideActor.DRIVER
+    return None
+
+
 class RideService:
-    """Ride requests and driver assignment."""
+    """Ride requests, driver assignment and the ride lifecycle."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Create the service on the request's session."""
@@ -72,4 +93,41 @@ class RideService:
             raise
 
         ride.driver = driver
+        return ride
+
+    async def transition(
+        self,
+        user: User,
+        ride_id: int,
+        action: RideAction,
+        *,
+        cancellation_reason: str | None = None,
+    ) -> Ride:
+        """Start, complete or cancel a ride on behalf of ``user``.
+
+        The ride and its driver are locked first, so concurrent actions on the
+        same ride are applied one at a time against the latest status.
+        Callers unrelated to the ride get 404 rather than 403, so ride ids
+        cannot be probed.
+        """
+        ride = await self.rides.get_for_update(ride_id)
+        if ride is None:
+            raise RideNotFoundError()
+        actor = actor_for(user, ride)
+        if actor is None:
+            raise RideNotFoundError()
+
+        now = datetime.now(UTC)
+        transition = apply_transition(ride, action, actor, at=now)
+
+        if action is RideAction.COMPLETE:
+            # No live tracking, so the estimate is what the rider pays.
+            ride.final_fare = ride.fare_estimate
+        if action is RideAction.CANCEL:
+            ride.cancellation_reason = cancellation_reason
+        if transition.releases_driver:
+            ride.driver.is_available = True
+            ride.driver.available_since = now
+
+        await self.session.flush()
         return ride

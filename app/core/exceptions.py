@@ -62,6 +62,13 @@ class DriverProfileNotFoundError(NotFoundError):
     default_message = "Create your driver profile first."
 
 
+class RideNotFoundError(NotFoundError):
+    """The ride does not exist or is not visible to the caller."""
+
+    code = "RIDE_NOT_FOUND"
+    default_message = "Ride not found."
+
+
 # --- 409 ---------------------------------------------------------------------
 
 
