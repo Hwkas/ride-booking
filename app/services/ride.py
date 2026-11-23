@@ -10,8 +10,9 @@ from app.core.exceptions import (
 )
 from app.models import Ride, RideStatus, User, UserRole
 from app.repositories.driver import DriverRepository
-from app.repositories.ride import RideRepository
-from app.schemas.ride import RideCreate
+from app.repositories.ride import RideFilters, RideRepository
+from app.schemas.common import Page, PaginationParams
+from app.schemas.ride import RideCreate, RideRead
 from app.services.pricing import estimate_fare, trip_distance_km
 from app.services.ride_lifecycle import RideAction, RideActor, apply_transition
 
@@ -131,3 +132,45 @@ class RideService:
 
         await self.session.flush()
         return ride
+
+    async def get_ride(self, user: User, ride_id: int) -> Ride:
+        """Return a ride the caller is involved in (or any ride, for admins)."""
+        ride = await self.rides.get(ride_id)
+        if ride is None or actor_for(user, ride) is None:
+            raise RideNotFoundError()
+        return ride
+
+    async def list_rides(
+        self,
+        user: User,
+        *,
+        statuses: list[RideStatus] | None,
+        page: PaginationParams,
+    ) -> Page[RideRead]:
+        """List rides visible to the caller, newest first.
+
+        Riders see rides they requested, drivers see rides assigned to them,
+        admins see every ride.
+        """
+        match user.role:
+            case UserRole.RIDER:
+                filters = RideFilters(rider_id=user.id, statuses=statuses)
+            case UserRole.DRIVER:
+                driver = await self.drivers.get_by_user_id(user.id)
+                if driver is None:  # no profile yet, so no rides
+                    return Page[RideRead](
+                        items=[], total=0, limit=page.limit, offset=page.offset
+                    )
+                filters = RideFilters(driver_id=driver.id, statuses=statuses)
+            case UserRole.ADMIN:
+                filters = RideFilters(statuses=statuses)
+
+        rides, total = await self.rides.list(
+            filters, limit=page.limit, offset=page.offset
+        )
+        return Page[RideRead](
+            items=[RideRead.from_model(r) for r in rides],
+            total=total,
+            limit=page.limit,
+            offset=page.offset,
+        )

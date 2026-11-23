@@ -1,8 +1,39 @@
-from sqlalchemy import exists, select
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+from sqlalchemy import Select, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models import Driver, Ride, RideStatus
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RideFilters:
+    """Which rides to list. ``None`` means "don't filter on this"."""
+
+    rider_id: int | None = None
+    driver_id: int | None = None
+    statuses: Sequence[RideStatus] | None = None
+    requested_from: datetime | None = None  # inclusive
+    requested_to: datetime | None = None  # exclusive
+
+    def conditions(self) -> list[ColumnElement[bool]]:
+        """SQL WHERE clauses for the set filters."""
+        clauses: list[ColumnElement[bool]] = []
+        if self.rider_id is not None:
+            clauses.append(Ride.rider_id == self.rider_id)
+        if self.driver_id is not None:
+            clauses.append(Ride.driver_id == self.driver_id)
+        if self.statuses:
+            clauses.append(Ride.status.in_(self.statuses))
+        if self.requested_from is not None:
+            clauses.append(Ride.created_at >= self.requested_from)
+        if self.requested_to is not None:
+            clauses.append(Ride.created_at < self.requested_to)
+        return clauses
 
 
 class RideRepository:
@@ -11,6 +42,16 @@ class RideRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""
         self.session = session
+
+    @staticmethod
+    def _with_driver() -> Select[tuple[Ride]]:
+        """Rides with their driver and the driver's user loaded in one query."""
+        return (
+            select(Ride)
+            .join(Ride.driver)
+            .join(Driver.user)
+            .options(contains_eager(Ride.driver).contains_eager(Driver.user))
+        )
 
     async def driver_has_active_ride(self, driver_id: int) -> bool:
         """Return True if the driver is assigned to or driving a ride."""
@@ -38,6 +79,10 @@ class RideRepository:
         await self.session.flush()
         return ride
 
+    async def get(self, ride_id: int) -> Ride | None:
+        """Return a ride with its driver loaded (no locking)."""
+        return await self.session.scalar(self._with_driver().where(Ride.id == ride_id))
+
     async def get_for_update(self, ride_id: int) -> Ride | None:
         """Return a ride with its driver (and driver's user), locking both rows.
 
@@ -45,11 +90,25 @@ class RideRepository:
         changes only lock the driver row, so no lock cycle (deadlock) exists.
         """
         stmt = (
-            select(Ride)
-            .join(Ride.driver)
-            .join(Driver.user)
-            .options(contains_eager(Ride.driver).contains_eager(Driver.user))
+            self._with_driver()
             .where(Ride.id == ride_id)
             .with_for_update(of=(Ride, Driver))
         )
         return await self.session.scalar(stmt)
+
+    async def list(
+        self, filters: RideFilters, *, limit: int, offset: int
+    ) -> tuple[list[Ride], int]:
+        """Return one page of matching rides (newest first) and the total."""
+        conditions = filters.conditions()
+        total = await self.session.scalar(
+            select(func.count()).select_from(Ride).where(*conditions)
+        )
+        rows = await self.session.scalars(
+            self._with_driver()
+            .where(*conditions)
+            .order_by(Ride.created_at.desc(), Ride.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(rows), total or 0
