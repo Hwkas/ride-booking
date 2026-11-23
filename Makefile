@@ -36,7 +36,10 @@ migrate:
 downgrade:
 	uv run alembic downgrade -1
 
+seed:
+	uv run python -m scripts.seed
+
 generate_migrations:
 	uv run alembic revision --autogenerate -m "$(msg)"
 
-.PHONY: format lint test build clear run run_db run_dev down migrate downgrade generate_migrations
+.PHONY: format lint test build clear run run_db run_dev down migrate downgrade seed generate_migrations

@@ -5,4 +5,7 @@ set -e
 echo "Applying migrations.."
 alembic upgrade head
 
+echo "Seeding admin user (idempotent).."
+python -m scripts.seed
+
 exec "$@"
