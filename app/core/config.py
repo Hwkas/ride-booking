@@ -1,9 +1,13 @@
 from decimal import Decimal
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# The value shipped in .env.example: fine for local use, refused in production.
+DEV_JWT_SECRET = "dev-only-insecure-jwt-secret-change-me-in-production"
 
 
 class Settings(BaseSettings):
@@ -27,7 +31,8 @@ class Settings(BaseSettings):
     db_echo: bool = False
 
     # Auth
-    jwt_secret_key: SecretStr
+    # HS256 needs a key of at least 32 bytes (RFC 7518 §3.2).
+    jwt_secret_key: SecretStr = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=60, gt=0)
     # bcrypt cost factor; 12 is a sensible production default, tests use 4.
@@ -40,6 +45,15 @@ class Settings(BaseSettings):
     # Admin seed
     admin_email: str | None = None
     admin_password: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def _no_dev_secret_in_production(self) -> Self:
+        if (
+            self.environment == "production"
+            and self.jwt_secret_key.get_secret_value() == DEV_JWT_SECRET
+        ):
+            raise ValueError("Set a real JWT_SECRET_KEY in production.")
+        return self
 
 
 @lru_cache
