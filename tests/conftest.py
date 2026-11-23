@@ -106,14 +106,16 @@ async def client(
         yield db_session
 
     async def _get_db_tx() -> AsyncGenerator[AsyncSession]:
-        # Mirrors get_async_db_tx: commit on success, roll back on error
-        # (both at SAVEPOINT level here).
+        # Mirrors get_async_db_tx: each request gets its own SAVEPOINT, released
+        # on success and rolled back on error. A failed request therefore
+        # undoes only its own writes, never the data the test arranged.
+        request_tx = await db_session.begin_nested()
         try:
             yield db_session
-            await db_session.commit()
         except Exception:
-            await db_session.rollback()
+            await request_tx.rollback()
             raise
+        await request_tx.commit()
 
     app.dependency_overrides[get_async_db] = _get_db
     app.dependency_overrides[get_async_db_tx] = _get_db_tx

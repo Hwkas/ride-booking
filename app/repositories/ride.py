@@ -20,3 +20,19 @@ class RideRepository:
             )
         )
         return bool(await self.session.scalar(stmt))
+
+    async def rider_has_active_ride(self, rider_id: int) -> bool:
+        """Return True if the rider has a ride that is not finished."""
+        stmt = select(
+            exists().where(
+                Ride.rider_id == rider_id,
+                Ride.status.in_(RideStatus.active()),
+            )
+        )
+        return bool(await self.session.scalar(stmt))
+
+    async def add(self, ride: Ride) -> Ride:
+        """Insert a ride and flush so id and timestamps are populated."""
+        self.session.add(ride)
+        await self.session.flush()
+        return ride
