@@ -8,6 +8,7 @@ from app.core.exceptions import (
     NoDriverAvailableError,
     RideNotFoundError,
 )
+from app.db.errors import violated_constraint
 from app.models import Ride, RideStatus, User, UserRole
 from app.repositories.driver import DriverRepository
 from app.repositories.ride import RideFilters, RideRepository
@@ -18,11 +19,6 @@ from app.services.ride_lifecycle import RideAction, RideActor, apply_transition
 
 
 RIDER_ACTIVE_RIDE_MESSAGE = "You already have an active ride."
-
-
-def _violated_constraint(exc: IntegrityError) -> str | None:
-    diag = getattr(exc.orig, "diag", None)
-    return getattr(diag, "constraint_name", None)
 
 
 def actor_for(user: User, ride: Ride) -> RideActor | None:
@@ -87,9 +83,9 @@ class RideService:
         except IntegrityError as exc:
             # Safety net for races the checks above cannot see; the database's
             # partial unique indexes are the final word.
-            if _violated_constraint(exc) == "uq_rides_rider_active":
+            if violated_constraint(exc) == "uq_rides_rider_active":
                 raise ActiveRideExistsError(RIDER_ACTIVE_RIDE_MESSAGE) from exc
-            if _violated_constraint(exc) == "uq_rides_driver_active":
+            if violated_constraint(exc) == "uq_rides_driver_active":
                 raise NoDriverAvailableError() from exc
             raise
 

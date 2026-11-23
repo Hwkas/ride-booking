@@ -13,6 +13,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.db.errors import violated_constraint
 from app.models import User
 from app.repositories.user import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
@@ -41,7 +42,9 @@ class AuthService:
             return await self.users.add(user)
         except IntegrityError as exc:
             # Lost a race with a concurrent registration of the same email.
-            raise EmailAlreadyRegisteredError() from exc
+            if violated_constraint(exc) == "uq_users_email":
+                raise EmailAlreadyRegisteredError() from exc
+            raise
 
     async def login(self, data: LoginRequest) -> TokenResponse:
         """Exchange valid credentials for an access token."""

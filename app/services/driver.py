@@ -9,6 +9,7 @@ from app.core.exceptions import (
     DriverProfileNotFoundError,
     LicensePlateTakenError,
 )
+from app.db.errors import violated_constraint
 from app.models import Driver, User
 from app.repositories.driver import DriverRepository
 from app.repositories.ride import RideRepository
@@ -41,9 +42,12 @@ class DriverService:
             await self.drivers.add(driver)
         except IntegrityError as exc:
             # Lost a race with a concurrent request; report which rule broke.
-            if "license_plate" in str(exc.orig):
-                raise LicensePlateTakenError() from exc
-            raise DriverProfileExistsError() from exc
+            match violated_constraint(exc):
+                case "uq_drivers_license_plate":
+                    raise LicensePlateTakenError() from exc
+                case "uq_drivers_user_id":
+                    raise DriverProfileExistsError() from exc
+            raise
 
         driver.user = user
         return driver

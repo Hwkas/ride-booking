@@ -9,6 +9,9 @@ lint:
 test:
 	uv run pytest
 
+coverage:
+	uv run pytest --cov --cov-report=term-missing
+
 build:
 	$(COMPOSE) down --rmi all && \
 	docker builder prune -f && \
@@ -42,4 +45,4 @@ seed:
 generate_migrations:
 	uv run alembic revision --autogenerate -m "$(msg)"
 
-.PHONY: format lint test build clear run run_db run_dev down migrate downgrade seed generate_migrations
+.PHONY: format lint test coverage build clear run run_db run_dev down migrate downgrade seed generate_migrations

@@ -15,7 +15,8 @@ Usage::
 import logging
 import sys
 
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import AbstractContextManager, contextmanager
 
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
@@ -74,8 +75,17 @@ def ensure_admin(session: Session, email: str, password: str) -> tuple[User, boo
     return admin, True
 
 
-def main() -> int:
-    """Run the seed; return a process exit code."""
+SessionScope = Callable[[], AbstractContextManager[Session]]
+
+# Commit on success, roll back if anything raises.
+default_session_scope: SessionScope = contextmanager(get_sync_db_tx)
+
+
+def main(session_scope: SessionScope = default_session_scope) -> int:
+    """Run the seed; return a process exit code.
+
+    ``session_scope`` opens the transaction; tests pass their own.
+    """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s [seed] %(message)s")
     try:
         credentials = admin_credentials(get_settings())
@@ -83,8 +93,7 @@ def main() -> int:
             logger.info("ADMIN_EMAIL / ADMIN_PASSWORD not set; skipping admin seed.")
             return 0
         email, password = credentials
-        # Commit on success, roll back if anything raises.
-        with contextmanager(get_sync_db_tx)() as session:
+        with session_scope() as session:
             admin, created = ensure_admin(session, email, password)
             logger.info(
                 "Admin %s %s.", admin.email, "created" if created else "already exists"

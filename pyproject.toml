@@ -33,9 +33,14 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "scripts"]
 branch = true
+# SQLAlchemy's async layer runs DB calls in greenlets; without this, lines
+# after an awaited query are wrongly reported as uncovered.
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+fail_under = 90
+exclude_also = ["if __name__ == .__main__.:"]
