@@ -29,6 +29,7 @@ if str(_settings.database_url) == TEST_DATABASE_URL:
 
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["ENVIRONMENT"] = "test"
+os.environ["BCRYPT_ROUNDS"] = "4"  # fast hashing; security is not under test here
 get_settings.cache_clear()
 
 # ruff: noqa: E402  (imports below depend on the environment set above)

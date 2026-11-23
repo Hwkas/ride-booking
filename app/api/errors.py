@@ -37,10 +37,10 @@ STATUS_BY_ERROR: dict[type[AppError], int] = {
     ConflictError: status.HTTP_409_CONFLICT,
 }
 
-# Shared OpenAPI entry so routes can document their error responses.
-ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
-    code: {"model": ErrorResponse} for code in (401, 403, 404, 409, 422)
-}
+
+def error_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    """OpenAPI ``responses`` entry documenting the given error status codes."""
+    return {code: {"model": ErrorResponse} for code in codes}
 
 
 def status_for(exc: AppError) -> int:

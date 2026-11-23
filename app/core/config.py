@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=60, gt=0)
+    # bcrypt cost factor; 12 is a sensible production default, tests use 4.
+    bcrypt_rounds: int = Field(default=12, ge=4, le=16)
 
     # Fare
     fare_base: Decimal = Field(default=Decimal("2.50"), ge=0)

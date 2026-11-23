@@ -65,6 +65,13 @@ class ConflictError(AppError):
     default_message = "The request conflicts with existing data."
 
 
+class EmailAlreadyRegisteredError(ConflictError):
+    """Registration with an email that already has an account."""
+
+    code = "EMAIL_ALREADY_REGISTERED"
+    default_message = "An account with this email already exists."
+
+
 class InvalidStateTransitionError(ConflictError):
     """A ride cannot move from its current status to the requested one."""
 

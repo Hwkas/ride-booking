@@ -7,18 +7,30 @@ keyword arguments.
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import lru_cache
 from itertools import count
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import create_access_token, hash_password_sync
 from app.models import Driver, Ride, RideStatus, User, UserRole
 
 
 _seq = count(1)
 
-# Placeholder until password hashing exists; auth tests create users via the API.
-DEFAULT_PASSWORD_HASH = "not-a-real-hash"
+DEFAULT_PASSWORD = "Passw0rd!"
+
+
+@lru_cache
+def _default_password_hash() -> str:
+    return hash_password_sync(DEFAULT_PASSWORD)
+
+
+def auth_headers(user: User) -> dict[str, str]:
+    """Authorization header with a valid token for ``user``."""
+    token, _ = create_access_token(user.id, user.role)
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def create_user(
@@ -31,7 +43,7 @@ async def create_user(
     n = next(_seq)
     fields: dict[str, Any] = {
         "email": f"{role.value}{n}@example.com",
-        "password_hash": DEFAULT_PASSWORD_HASH,
+        "password_hash": _default_password_hash(),
         "full_name": f"Test {role.value.title()} {n}",
         "role": role,
     }
